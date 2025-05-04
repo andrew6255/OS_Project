@@ -11,6 +11,8 @@
 #include <QMessageBox>
 #include <unistd.h>
 #include <signal.h>
+#include <QLineEdit>
+#include <QComboBox>
 
 #include <utility>
 #include <fstream>
@@ -21,6 +23,16 @@ ProcessManager::ProcessManager(QWidget *parent)
     : QWidget(parent), darkMode(false), sortByCPU(true) {
 
     table = new QTableWidget(this);
+    search = new QLineEdit(this);
+    search->setPlaceholderText("Search here...");
+    searchType = new QComboBox(this);
+    searchType->addItems({"Name", "PID"});
+    
+    QHBoxLayout *layout = new QHBoxLayout;
+    layout->addWidget(new QLabel("Search by: "));
+    layout->addWidget(searchType);
+    layout->addWidget(search);
+
     table->setColumnCount(4);
     table->setHorizontalHeaderLabels({"PID", "Name", "CPU Usage", "Memory (MB)"});
     table->horizontalHeader()->setStretchLastSection(true);
@@ -44,6 +56,7 @@ ProcessManager::ProcessManager(QWidget *parent)
     buttonLayout->addWidget(statsButton);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->addLayout(layout);
     mainLayout->addWidget(table);
     mainLayout->addWidget(totalCpuLabel);
     mainLayout->addWidget(totalMemLabel);
@@ -56,6 +69,8 @@ ProcessManager::ProcessManager(QWidget *parent)
     connect(sortButton, &QPushButton::clicked, this, &ProcessManager::toggle_sort_mode);
     connect(killButton, &QPushButton::clicked, this, &ProcessManager::kill_selected_process);
     connect(statsButton, &QPushButton::clicked, this, &ProcessManager::show_stats_window);
+    connect(search, &QLineEdit::textChanged, this,  &ProcessManager::update_process_list);
+    connect(searchType, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ProcessManager::update_process_list);
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &ProcessManager::update_process_list);
@@ -72,6 +87,9 @@ void ProcessManager::update_process_list() {
     float total_cpu = 0.0;
     float total_mem = 0.0;
     QList<QList<QVariant>> processList;
+    
+    QString query = search->text().trimmed();
+    QString type = searchType->currentText().trimmed();
 
     for (const QString &pidStr : entries) {
         bool ok;
@@ -112,6 +130,12 @@ void ProcessManager::update_process_list() {
             nameFile.close();
         }
 
+        if (!query.isEmpty()) {
+	   if ((type == "Name" || type == "name") && !name.contains(query, Qt::CaseInsensitive))
+                continue;
+           if ((type == "PID" || type == "pid") && QString::number(pid) != query) 
+                continue;
+	}
         processList.append({pid, name, cpu, mem});
     }
 

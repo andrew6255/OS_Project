@@ -8,6 +8,11 @@
 #include <QApplication>
 #include <QLabel>
 #include "statswindow.h"
+#include <QLineEdit>
+#include <QComboBox>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+
 
 class ProcessManager : public QWidget {
     Q_OBJECT
@@ -34,6 +39,8 @@ private:
     QLabel *memUsagePercentLabel;
     QPushButton *statsButton;
     StatsWindow *statsWindow;
+    QLineEdit *search;
+    QComboBox *searchType;
 
     bool darkMode;
     bool sortByCPU;
