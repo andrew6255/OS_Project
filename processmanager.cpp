@@ -9,10 +9,11 @@
 #include <QLabel>
 #include <QProcess>
 #include <QMessageBox>
-#include <unistd.h>
-#include <signal.h>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QDoubleSpinBox>
+#include <unistd.h>
+#include <signal.h>
 
 #include <utility>
 #include <fstream>
@@ -23,15 +24,33 @@ ProcessManager::ProcessManager(QWidget *parent)
     : QWidget(parent), darkMode(false), sortByCPU(true) {
 
     table = new QTableWidget(this);
+
     search = new QLineEdit(this);
     search->setPlaceholderText("Search here...");
     searchType = new QComboBox(this);
     searchType->addItems({"Name", "PID"});
-    
-    QHBoxLayout *layout = new QHBoxLayout;
-    layout->addWidget(new QLabel("Search by: "));
-    layout->addWidget(searchType);
-    layout->addWidget(search);
+
+    QHBoxLayout *searchLayout = new QHBoxLayout;
+    searchLayout->addWidget(new QLabel("Search by: "));
+    searchLayout->addWidget(searchType);
+    searchLayout->addWidget(search);
+
+    cpuThresholdSpin = new QDoubleSpinBox(this);
+    cpuThresholdSpin->setRange(0, 1000);
+    cpuThresholdSpin->setSuffix(" s");
+    cpuThresholdSpin->setPrefix("Min CPU: ");
+    cpuThresholdSpin->setValue(0);
+
+    memThresholdSpin = new QDoubleSpinBox(this);
+    memThresholdSpin->setRange(0, 1e6);
+    memThresholdSpin->setSuffix(" MB");
+    memThresholdSpin->setPrefix("Min Mem: ");
+    memThresholdSpin->setValue(0);
+
+    QHBoxLayout *thresholdLayout = new QHBoxLayout;
+    thresholdLayout->addWidget(cpuThresholdSpin);
+    thresholdLayout->addSpacing(20);
+    thresholdLayout->addWidget(memThresholdSpin);
 
     table->setColumnCount(4);
     table->setHorizontalHeaderLabels({"PID", "Name", "CPU Usage", "Memory (MB)"});
@@ -47,7 +66,7 @@ ProcessManager::ProcessManager(QWidget *parent)
     modeButton = new QPushButton("Switch Dark/Light Mode", this);
     sortButton = new QPushButton("Switch sorting by CPU/Memory Usage", this);
     killButton = new QPushButton("Kill Selected Process", this);
-    statsButton = new QPushButton("Stats and Graphs");
+    statsButton = new QPushButton("Stats and Graphs", this);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     buttonLayout->addWidget(modeButton);
@@ -56,7 +75,8 @@ ProcessManager::ProcessManager(QWidget *parent)
     buttonLayout->addWidget(statsButton);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    mainLayout->addLayout(layout);
+    mainLayout->addLayout(searchLayout);
+    mainLayout->addLayout(thresholdLayout);
     mainLayout->addWidget(table);
     mainLayout->addWidget(totalCpuLabel);
     mainLayout->addWidget(totalMemLabel);
@@ -69,8 +89,13 @@ ProcessManager::ProcessManager(QWidget *parent)
     connect(sortButton, &QPushButton::clicked, this, &ProcessManager::toggle_sort_mode);
     connect(killButton, &QPushButton::clicked, this, &ProcessManager::kill_selected_process);
     connect(statsButton, &QPushButton::clicked, this, &ProcessManager::show_stats_window);
-    connect(search, &QLineEdit::textChanged, this,  &ProcessManager::update_process_list);
-    connect(searchType, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ProcessManager::update_process_list);
+    connect(search, &QLineEdit::textChanged, this, &ProcessManager::update_process_list);
+    connect(searchType, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &ProcessManager::update_process_list);
+    connect(cpuThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &ProcessManager::update_process_list);
+    connect(memThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &ProcessManager::update_process_list);
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &ProcessManager::update_process_list);
@@ -87,9 +112,11 @@ void ProcessManager::update_process_list() {
     float total_cpu = 0.0;
     float total_mem = 0.0;
     QList<QList<QVariant>> processList;
-    
+
     QString query = search->text().trimmed();
     QString type = searchType->currentText().trimmed();
+    float cpuMin = static_cast<float>(cpuThresholdSpin->value());
+    float memMin = static_cast<float>(memThresholdSpin->value());
 
     for (const QString &pidStr : entries) {
         bool ok;
@@ -115,7 +142,7 @@ void ProcessManager::update_process_list() {
             QStringList memStats = memStream.readLine().split(" ");
             if (memStats.size() > 1) {
                 float rss = memStats[1].toFloat();
-                float pageSize = sysconf(_SC_PAGESIZE) / 1024.0 / 1024.0; // MB
+                float pageSize = sysconf(_SC_PAGESIZE) / 1024.0 / 1024.0;
                 mem = rss * pageSize;
                 total_mem += mem;
             }
@@ -130,12 +157,18 @@ void ProcessManager::update_process_list() {
             nameFile.close();
         }
 
+        if (cpu < cpuMin) continue;
+        if (mem < memMin) continue;
+
         if (!query.isEmpty()) {
-	   if ((type == "Name" || type == "name") && !name.contains(query, Qt::CaseInsensitive))
+            if ((type == "Name" || type == "name") &&
+                !name.contains(query, Qt::CaseInsensitive))
                 continue;
-           if ((type == "PID" || type == "pid") && QString::number(pid) != query) 
+            if ((type == "PID"  || type == "pid") &&
+                QString::number(pid) != query)
                 continue;
-	}
+        }
+
         processList.append({pid, name, cpu, mem});
     }
 
