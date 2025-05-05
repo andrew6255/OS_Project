@@ -30,6 +30,7 @@ private slots:
     void toggle_sort_mode();
     void update_theme();
     void show_stats_window();
+    void set_process_priority();
 
 private:
     QTableWidget *table;
@@ -46,6 +47,8 @@ private:
     QComboBox *searchType;
     QDoubleSpinBox *cpuThresholdSpin;
     QDoubleSpinBox *memThresholdSpin;
+    QSpinBox *priorityBox;
+    QPushButton *setPriorityButton;
 
     bool darkMode;
     bool sortByCPU;

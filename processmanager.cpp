@@ -14,6 +14,7 @@
 #include <QDoubleSpinBox>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/resource.h>  
 
 #include <utility>
 #include <fstream>
@@ -68,11 +69,20 @@ ProcessManager::ProcessManager(QWidget *parent)
     killButton = new QPushButton("Kill Selected Process", this);
     statsButton = new QPushButton("Stats and Graphs", this);
 
+    priorityBox = new QSpinBox(this);
+    priorityBox->setRange(-20,19);
+    priorityBox->setValue(0);
+    priorityBox->setPrefix("Priority: ");
+    
+    setPriorityButton = new QPushButton("Set process priority", this);
+
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     buttonLayout->addWidget(modeButton);
     buttonLayout->addWidget(sortButton);
     buttonLayout->addWidget(killButton);
     buttonLayout->addWidget(statsButton);
+    buttonLayout->addWidget(setPriorityButton);
+    buttonLayout->addWidget(priorityBox);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addLayout(searchLayout);
@@ -96,6 +106,7 @@ ProcessManager::ProcessManager(QWidget *parent)
             this, &ProcessManager::update_process_list);
     connect(memThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &ProcessManager::update_process_list);
+    connect(setPriorityButton, &QPushButton::clicked, this, &ProcessManager::set_process_priority);
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &ProcessManager::update_process_list);
@@ -267,4 +278,24 @@ std::pair<float, float> getCpuAndMemoryUsage() {
     }
 
     return {cpuUsage, memUsage};
+}
+
+void ProcessManager::set_process_priority() {
+    QList<QTableWidgetItem*> selected = table->selectedItems();
+    if (!selected.isEmpty()) {
+        int row = table->row(selected.first());
+        // get the row and from there, select item
+        int pid = table->item(row,0)->text().toInt();
+        // select from box
+        int new_prio = priorityBox->value();
+        // adjusting one process (PRIO_PROCESS)
+        if (setpriority(PRIO_PROCESS, pid, new_prio) == 0) {
+            // so if equals 0, it's a success
+            QMessageBox::information(this, "Success", "Priority changed!");
+        } else {
+            QMessageBox::warning(this, "Fail", "Failed to change priority.");
+        }
+    } else { // if empty
+        QMessageBox::warning(this, "Nothing selected", "Please select a process");
+    }
 }
