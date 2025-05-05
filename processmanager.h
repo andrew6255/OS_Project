@@ -7,11 +7,14 @@
 #include <QTimer>
 #include <QApplication>
 #include <QLabel>
-#include "statswindow.h"
 #include <QLineEdit>
 #include <QComboBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QDoubleSpinBox>
+
+#include "statswindow.h"
+
 
 
 class ProcessManager : public QWidget {
@@ -41,9 +44,11 @@ private:
     StatsWindow *statsWindow;
     QLineEdit *search;
     QComboBox *searchType;
+    QDoubleSpinBox *cpuThresholdSpin;
+    QDoubleSpinBox *memThresholdSpin;
 
     bool darkMode;
     bool sortByCPU;
 };
 
-#endif // PROCESSMANAGER_H
+#endif
