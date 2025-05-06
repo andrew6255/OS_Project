@@ -12,10 +12,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QDoubleSpinBox>
-
+#include <QSpinBox>
 #include "statswindow.h"
-
-
 
 class ProcessManager : public QWidget {
     Q_OBJECT
@@ -31,24 +29,26 @@ private slots:
     void update_theme();
     void show_stats_window();
     void set_process_priority();
+    void pause_selected_processes();
 
 private:
-    QTableWidget *table;
-    QPushButton *modeButton;
-    QPushButton *sortButton;
-    QPushButton *killButton;
-    QLabel *totalCpuLabel;
-    QLabel *totalMemLabel;
-    QLabel *cpuUsagePercentLabel;
-    QLabel *memUsagePercentLabel;
-    QPushButton *statsButton;
-    StatsWindow *statsWindow;
-    QLineEdit *search;
-    QComboBox *searchType;
+    QTableWidget   *table;
+    QPushButton    *modeButton;
+    QPushButton    *sortButton;
+    QPushButton    *killButton;
+    QPushButton    *pauseButton;
+    QLabel         *totalCpuLabel;
+    QLabel         *totalMemLabel;
+    QLabel         *cpuUsagePercentLabel;
+    QLabel         *memUsagePercentLabel;
+    QPushButton    *statsButton;
+    StatsWindow    *statsWindow;
+    QLineEdit      *search;
+    QComboBox      *searchType;
     QDoubleSpinBox *cpuThresholdSpin;
     QDoubleSpinBox *memThresholdSpin;
-    QSpinBox *priorityBox;
-    QPushButton *setPriorityButton;
+    QSpinBox       *priorityBox;
+    QPushButton    *setPriorityButton;
 
     bool darkMode;
     bool sortByCPU;
