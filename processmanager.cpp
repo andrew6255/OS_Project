@@ -12,9 +12,13 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
+#include <QSet>
+#include <QStringList>
+#include <QTimer>
 #include <unistd.h>
 #include <signal.h>
-#include <sys/resource.h>  
+#include <sys/resource.h>
 
 #include <utility>
 #include <fstream>
@@ -26,6 +30,7 @@ ProcessManager::ProcessManager(QWidget *parent)
 
     table = new QTableWidget(this);
 
+    // Search controls
     search = new QLineEdit(this);
     search->setPlaceholderText("Search here...");
     searchType = new QComboBox(this);
@@ -36,6 +41,7 @@ ProcessManager::ProcessManager(QWidget *parent)
     searchLayout->addWidget(searchType);
     searchLayout->addWidget(search);
 
+    // Threshold filters
     cpuThresholdSpin = new QDoubleSpinBox(this);
     cpuThresholdSpin->setRange(0, 1000);
     cpuThresholdSpin->setSuffix(" s");
@@ -53,28 +59,32 @@ ProcessManager::ProcessManager(QWidget *parent)
     thresholdLayout->addSpacing(20);
     thresholdLayout->addWidget(memThresholdSpin);
 
+    // Table setup
     table->setColumnCount(4);
     table->setHorizontalHeaderLabels({"PID", "Name", "CPU Usage", "Memory (MB)"});
     table->horizontalHeader()->setStretchLastSection(true);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    totalCpuLabel = new QLabel("Total CPU Usage: --", this);
-    totalMemLabel = new QLabel("Total Memory Usage: --", this);
+    // Summary labels
+    totalCpuLabel        = new QLabel("Total CPU Usage: --", this);
+    totalMemLabel        = new QLabel("Total Memory Usage: --", this);
     cpuUsagePercentLabel = new QLabel("CPU %: --", this);
     memUsagePercentLabel = new QLabel("Memory %: --", this);
 
-    modeButton = new QPushButton("Switch Dark/Light Mode", this);
-    sortButton = new QPushButton("Switch sorting by CPU/Memory Usage", this);
-    killButton = new QPushButton("Kill Selected Process", this);
-    statsButton = new QPushButton("Stats and Graphs", this);
+    // Control buttons
+    modeButton       = new QPushButton("Switch Dark/Light Mode", this);
+    sortButton       = new QPushButton("Switch sorting by CPU/Memory Usage", this);
+    killButton       = new QPushButton("Kill Selected Process", this);
+    statsButton      = new QPushButton("Stats and Graphs", this);
+    setPriorityButton= new QPushButton("Set process priority", this);
+    pauseButton      = new QPushButton("Pause Selected Process", this);
 
+    // Priority control
     priorityBox = new QSpinBox(this);
-    priorityBox->setRange(-20,19);
+    priorityBox->setRange(-20, 19);
     priorityBox->setValue(0);
     priorityBox->setPrefix("Priority: ");
-    
-    setPriorityButton = new QPushButton("Set process priority", this);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     buttonLayout->addWidget(modeButton);
@@ -83,6 +93,7 @@ ProcessManager::ProcessManager(QWidget *parent)
     buttonLayout->addWidget(statsButton);
     buttonLayout->addWidget(setPriorityButton);
     buttonLayout->addWidget(priorityBox);
+    buttonLayout->addWidget(pauseButton);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addLayout(searchLayout);
@@ -95,18 +106,17 @@ ProcessManager::ProcessManager(QWidget *parent)
     mainLayout->addLayout(buttonLayout);
     setLayout(mainLayout);
 
+    // Signal-slot connections
     connect(modeButton, &QPushButton::clicked, this, &ProcessManager::toggle_dark_light_mode);
     connect(sortButton, &QPushButton::clicked, this, &ProcessManager::toggle_sort_mode);
     connect(killButton, &QPushButton::clicked, this, &ProcessManager::kill_selected_process);
     connect(statsButton, &QPushButton::clicked, this, &ProcessManager::show_stats_window);
-    connect(search, &QLineEdit::textChanged, this, &ProcessManager::update_process_list);
-    connect(searchType, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &ProcessManager::update_process_list);
-    connect(cpuThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, &ProcessManager::update_process_list);
-    connect(memThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, &ProcessManager::update_process_list);
     connect(setPriorityButton, &QPushButton::clicked, this, &ProcessManager::set_process_priority);
+    connect(pauseButton, &QPushButton::clicked, this, &ProcessManager::pause_selected_processes);
+    connect(search, &QLineEdit::textChanged, this, &ProcessManager::update_process_list);
+    connect(searchType, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &ProcessManager::update_process_list);
+    connect(cpuThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &ProcessManager::update_process_list);
+    connect(memThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &ProcessManager::update_process_list);
 
     QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &ProcessManager::update_process_list);
@@ -125,32 +135,30 @@ void ProcessManager::update_process_list() {
     QList<QList<QVariant>> processList;
 
     QString query = search->text().trimmed();
-    QString type = searchType->currentText().trimmed();
-    float cpuMin = static_cast<float>(cpuThresholdSpin->value());
-    float memMin = static_cast<float>(memThresholdSpin->value());
+    QString type  = searchType->currentText().trimmed();
+    float cpuMin  = static_cast<float>(cpuThresholdSpin->value());
+    float memMin  = static_cast<float>(memThresholdSpin->value());
 
     for (const QString &pidStr : entries) {
         bool ok;
         int pid = pidStr.toInt(&ok);
         if (!ok) continue;
 
-        QString statPath = "/proc/" + pidStr + "/stat";
-        QFile statFile(statPath);
+        QFile statFile("/proc/" + pidStr + "/stat");
         if (!statFile.open(QIODevice::ReadOnly)) continue;
         QTextStream statStream(&statFile);
         QStringList stats = statStream.readLine().split(' ');
         statFile.close();
-
         if (stats.size() < 14) continue;
+
         float cpu = stats.value(13).toFloat() / sysconf(_SC_CLK_TCK);
         total_cpu += cpu;
 
-        QString memPath = "/proc/" + pidStr + "/statm";
-        QFile memFile(memPath);
+        QFile memFile("/proc/" + pidStr + "/statm");
         float mem = 0.0;
         if (memFile.open(QIODevice::ReadOnly)) {
             QTextStream memStream(&memFile);
-            QStringList memStats = memStream.readLine().split(" ");
+            QStringList memStats = memStream.readLine().split(' ');
             if (memStats.size() > 1) {
                 float rss = memStats[1].toFloat();
                 float pageSize = sysconf(_SC_PAGESIZE) / 1024.0 / 1024.0;
@@ -172,11 +180,9 @@ void ProcessManager::update_process_list() {
         if (mem < memMin) continue;
 
         if (!query.isEmpty()) {
-            if ((type == "Name" || type == "name") &&
-                !name.contains(query, Qt::CaseInsensitive))
+            if ((type == "Name" || type == "name") && !name.contains(query, Qt::CaseInsensitive))
                 continue;
-            if ((type == "PID"  || type == "pid") &&
-                QString::number(pid) != query)
+            if ((type == "PID"  || type == "pid")  && QString::number(pid) != query)
                 continue;
         }
 
@@ -184,8 +190,10 @@ void ProcessManager::update_process_list() {
     }
 
     if (!processList.isEmpty()) {
-        std::sort(processList.begin(), processList.end(), [this](const QList<QVariant> &a, const QList<QVariant> &b) {
-            return sortByCPU ? a[2].toFloat() > b[2].toFloat() : a[3].toFloat() > b[3].toFloat();
+        std::sort(processList.begin(), processList.end(), [this](const QList<QVariant> &a,
+                                                                 const QList<QVariant> &b) {
+            return sortByCPU ? a[2].toFloat() > b[2].toFloat()
+                             : a[3].toFloat() > b[3].toFloat();
         });
 
         table->setRowCount(processList.size());
@@ -232,8 +240,7 @@ void ProcessManager::update_theme() {
     qApp->setStyleSheet(darkMode ?
         "QWidget { background-color: #2b2b2b; color: white; }"
         "QPushButton { background-color: #3c3c3c; color: white; }"
-        :
-        "");
+        : "");
 }
 
 void ProcessManager::show_stats_window() {
@@ -241,6 +248,48 @@ void ProcessManager::show_stats_window() {
         statsWindow = new StatsWindow(this);
     }
     statsWindow->show();
+}
+
+void ProcessManager::set_process_priority() {
+    QList<QTableWidgetItem*> selected = table->selectedItems();
+    if (!selected.isEmpty()) {
+        int row = table->row(selected.first());
+        int pid = table->item(row, 0)->text().toInt();
+        int new_prio = priorityBox->value();
+        if (setpriority(PRIO_PROCESS, pid, new_prio) == 0) {
+            QMessageBox::information(this, "Success", "Priority changed!");
+        } else {
+            QMessageBox::warning(this, "Fail", "Failed to change priority.");
+        }
+    } else {
+        QMessageBox::warning(this, "Nothing selected", "Please select a process");
+    }
+}
+
+void ProcessManager::pause_selected_processes() {
+    QList<QTableWidgetItem*> selectedItems = table->selectedItems();
+    if (selectedItems.isEmpty()) {
+        QMessageBox::warning(this, "Nothing selected", "Please select one or more processes to pause.");
+        return;
+    }
+
+    QSet<int> rows;
+    for (auto *item : selectedItems)
+        rows.insert(item->row());
+
+    QStringList succeeded, failed;
+    for (int row : rows) {
+        int pid = table->item(row, 0)->text().toInt();
+        if (kill(pid, SIGSTOP) == 0)
+            succeeded << QString::number(pid);
+        else
+            failed << QString::number(pid);
+    }
+
+    if (!succeeded.isEmpty())
+        QMessageBox::information(this, "Paused", "Paused processes: " + succeeded.join(", "));
+    if (!failed.isEmpty())
+        QMessageBox::warning(this, "Error", "Failed to pause: " + failed.join(", "));
 }
 
 std::pair<float, float> getCpuAndMemoryUsage() {
@@ -278,24 +327,4 @@ std::pair<float, float> getCpuAndMemoryUsage() {
     }
 
     return {cpuUsage, memUsage};
-}
-
-void ProcessManager::set_process_priority() {
-    QList<QTableWidgetItem*> selected = table->selectedItems();
-    if (!selected.isEmpty()) {
-        int row = table->row(selected.first());
-        // get the row and from there, select item
-        int pid = table->item(row,0)->text().toInt();
-        // select from box
-        int new_prio = priorityBox->value();
-        // adjusting one process (PRIO_PROCESS)
-        if (setpriority(PRIO_PROCESS, pid, new_prio) == 0) {
-            // so if equals 0, it's a success
-            QMessageBox::information(this, "Success", "Priority changed!");
-        } else {
-            QMessageBox::warning(this, "Fail", "Failed to change priority.");
-        }
-    } else { // if empty
-        QMessageBox::warning(this, "Nothing selected", "Please select a process");
-    }
 }
